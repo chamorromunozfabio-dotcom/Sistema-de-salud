@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.local
+
+# Deps
+node_modules/
+
+# Build
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
