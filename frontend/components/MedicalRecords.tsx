@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getMyMedicalRecords, getAllMedicalRecords, deleteMedicalRecord, signMedicalRecord, generateAiProtocol, createMedicalRecord } from '../services/apiService';
+import { getMyMedicalRecords, getAllMedicalRecords, getPatients, deleteMedicalRecord, signMedicalRecord, generateAiProtocol, createMedicalRecord } from '../services/apiService';
 import { useAuth } from '../context/AuthContext';
 import { FileText, Stethoscope, User, Plus, Trash2, CheckCircle, Sparkles, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 export default function MedicalRecords() {
   const { user } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -25,6 +26,14 @@ export default function MedicalRecords() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (role === 'DOCTOR' || role === 'ADMIN') {
+      getPatients().then((r: any) => {
+        if (r.data) setPatients(r.data as any[]);
+      });
+    }
+  }, [role]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,9 +96,14 @@ export default function MedicalRecords() {
             <button onClick={() => setShowCreate(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Plus className="w-4 h-4"/> Nueva Historia (doctor genera)</button>
           ) : (
             <form onSubmit={handleCreate} className="bg-white p-4 rounded-xl border shadow space-y-3">
-              <h3 className="font-semibold">Crear Historia Clínica - lógica real: doctor genera, admin administra</h3>
-              <input placeholder="ID Paciente (UUID) - ej: paciente1 id" value={form.patientId} onChange={(e) => setForm({...form, patientId: e.target.value})} className="w-full border p-2 rounded" required />
-              <input placeholder="Motivo consulta (chiefComplaint)" value={form.chiefComplaint} onChange={(e) => setForm({...form, chiefComplaint: e.target.value})} className="w-full border p-2 rounded" required />
+              <h3 className="font-semibold">Crear Historia Clínica - doctor genera, admin administra</h3>
+              <select value={form.patientId} onChange={(e) => setForm({...form, patientId: e.target.value})} className="w-full border p-2 rounded bg-white" required>
+                <option value="">-- Selecciona paciente --</option>
+                {patients.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.firstName} {p.lastName} - {p.email} {p.dni ? `· DNI ${p.dni}` : ''}</option>
+                ))}
+              </select>
+              <input placeholder="Motivo consulta" value={form.chiefComplaint} onChange={(e) => setForm({...form, chiefComplaint: e.target.value})} className="w-full border p-2 rounded" required />
               <textarea placeholder="Historia enfermedad actual" value={form.historyOfPresentIllness} onChange={(e) => setForm({...form, historyOfPresentIllness: e.target.value})} className="w-full border p-2 rounded" rows={2} />
               <input placeholder="Diagnóstico + CIE10 (ej: Hipertensión I10)" value={form.diagnosis} onChange={(e) => setForm({...form, diagnosis: e.target.value})} className="w-full border p-2 rounded" required />
               <textarea placeholder="Plan tratamiento" value={form.treatmentPlan} onChange={(e) => setForm({...form, treatmentPlan: e.target.value})} className="w-full border p-2 rounded" rows={2} />
@@ -97,7 +111,6 @@ export default function MedicalRecords() {
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Guardar</button>
                 <button type="button" onClick={() => setShowCreate(false)} className="bg-gray-200 px-4 py-2 rounded">Cancelar</button>
               </div>
-              <p className="text-xs text-gray-500">Hint: para demo usa ID de paciente1 visible en Admin → Usuarios</p>
             </form>
           )}
         </div>
@@ -115,7 +128,16 @@ export default function MedicalRecords() {
                 <div className="text-sm mt-2"><strong>Diagnóstico:</strong> {r.diagnosis} {r.diagnosisCode && `(${r.diagnosisCode})`}</div>
                 {r.treatmentPlan && <div className="text-sm"><strong>Plan:</strong> {r.treatmentPlan}</div>}
                 {r.physicalExam && <div className="text-sm"><strong>Examen:</strong> {r.physicalExam}</div>}
-                {r.vitalSigns && <div className="text-xs bg-slate-50 p-2 rounded mt-2"><strong>Signos vitales:</strong> {JSON.stringify(r.vitalSigns)}</div>}
+                {r.vitalSigns && (
+                  <div className="text-xs bg-slate-50 p-2 rounded mt-2">
+                    <strong>Signos vitales:</strong>
+                    <div className="grid grid-cols-2 gap-x-4 mt-1">
+                      {Object.entries(r.vitalSigns as Record<string, any>).map(([k, v]) => (
+                        <span key={k}><strong>{k}:</strong> {String(v)}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {r.aiProtocol && <div className="mt-3 p-3 bg-indigo-50 border border-indigo-200 rounded"><div className="text-xs font-bold text-indigo-700 flex items-center gap-1"><Sparkles className="w-3 h-3"/> Protocolo IA (Gemini):</div><div className="text-sm whitespace-pre-wrap">{r.aiProtocol}</div></div>}
                 {r.aiDiagnosisSupport && <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded"><div className="text-xs font-bold text-purple-700">Diagnóstico IA:</div><div className="text-sm whitespace-pre-wrap">{r.aiDiagnosisSupport}</div></div>}
                 {r.prescriptions?.length > 0 && <div className="text-xs mt-2"><strong>Recetas:</strong> {r.prescriptions.map((p: any) => `${p.medication} ${p.dosage} ${p.frequency} (${p.duration})`).join(' | ')}</div>}
