@@ -50,6 +50,8 @@ services:
     restart: unless-stopped
     ports:
       - '3001:3001'
+    env_file:
+      - ./backend/.env
     environment:
       PORT: 3001
       NODE_ENV: development
@@ -65,14 +67,13 @@ services:
       EMAIL_USER: ""
       EMAIL_PASS: ""
       EMAIL_FROM: "SaludPública Connect <noreply@saludpublica.com>"
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-tu_api_key_de_google_ai}
+      # GEMINI_API_KEY se lee desde backend/.env (no committeado, ver backend/.env.example)
+      # Si no hay .env, usar fallback tu_api_key_de_google_ai -> modo demo
     depends_on:
       - postgres
       - redis
     networks:
       - saludpublica-network
-    env_file:
-      - ./backend/.env
 
   # Frontend React + Vite
   frontend:
@@ -80,14 +81,13 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: http://localhost:3001
-        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-tu_api_key_aqui}
+        VITE_GEMINI_API_KEY: ${GEMINI_API_KEY:-tu_api_key_aqui}
     container_name: saludpublica-frontend
     restart: unless-stopped
     ports:
       - '3000:3000'
-    environment:
-      VITE_API_URL: http://localhost:3001
-      VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-tu_api_key_aqui}
+    env_file:
+      - ./frontend/.env
     depends_on:
       - backend
     networks:
