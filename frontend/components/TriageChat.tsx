@@ -1,13 +1,30 @@
-import React, { useState } from 'react';
-import { Send, AlertCircle, CheckCircle, Loader, Stethoscope } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, AlertCircle, CheckCircle, Loader, Stethoscope, CalendarCheck, FileText, Sparkles } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { analyzeSymptoms } from '../services/geminiService';
 import { TriageResult } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { getPatients, createMedicalRecord } from '../services/apiService';
 
 const TriageChat: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const isDoctor = user?.role === 'DOCTOR';
+  const isPatient = user?.role === 'PATIENT';
   const [symptoms, setSymptoms] = useState('');
   const [result, setResult] = useState<TriageResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [patients, setPatients] = useState<any[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState('');
+
+  useEffect(() => {
+    if (isDoctor) {
+      getPatients().then((r: any) => { if (r.data) setPatients(r.data as any[]); });
+    }
+  }, [isDoctor]);
 
   const handleAnalyze = async () => {
     if (!symptoms.trim()) {
@@ -43,17 +60,54 @@ const TriageChat: React.FC = () => {
     }
   };
 
+  const handleCreateFromTriage = async () => {
+    if (!isDoctor) return;
+    if (!selectedPatientId) { setError('Selecciona un paciente para crear la historia'); return; }
+    if (!result) return;
+    setCreating(true);
+    setError(null);
+    setCreateMsg('');
+    const res: any = await createMedicalRecord({
+      patientId: selectedPatientId,
+      chiefComplaint: symptoms.slice(0, 500),
+      diagnosis: `${result.recommendedSpecialty} - ${result.reasoning}`,
+      historyOfPresentIllness: `Triaje IA: ${result.reasoning} (Urgencia: ${result.urgency}) | Síntomas: ${symptoms}`,
+      treatmentPlan: `Evaluación por ${result.recommendedSpecialty}. ${result.urgency === 'Alta' ? 'Derivar a guardia/urgencias.' : result.urgency === 'Media' ? 'Control en 48-72hs.' : 'Control ambulatorio.'}`,
+    });
+    if (res.error) setError(res.error);
+    else {
+      setCreateMsg('Historia clínica creada con apoyo de IA. Ve a Historia Clínica para completarla y generar protocolo IA.');
+      setTimeout(()=> navigate('/medical-records'), 1200);
+    }
+    setCreating(false);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-xl shadow-lg p-8">
         <div className="flex items-center space-x-3 mb-6">
           <Stethoscope className="w-8 h-8 text-blue-600" />
-          <h2 className="text-3xl font-bold text-gray-800">Triaje Inteligente con IA</h2>
+          <h2 className="text-3xl font-bold text-gray-800">
+            {isDoctor ? 'Triaje Inteligente - Asistencia para Historia Clínica' : 'Triaje Inteligente con IA'}
+          </h2>
         </div>
 
         <p className="text-gray-600 mb-6">
-          Describe tus síntomas y nuestra IA te recomendará la especialidad médica más adecuada.
+          {isDoctor
+            ? 'Describe los síntomas del paciente. La IA te ayudará a crear la historia clínica con diagnóstico sugerido y protocolo.'
+            : 'Describe tus síntomas y nuestra IA te recomendará la especialidad médica más adecuada y te ayudará a reservar tu cita.'}
         </p>
+
+        {isDoctor && (
+          <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded">
+            <label className="text-sm font-medium text-indigo-800">Paciente para la historia (requerido para crear)</label>
+            <select value={selectedPatientId} onChange={e=>setSelectedPatientId(e.target.value)} className="w-full mt-1 border p-2 rounded bg-white">
+              <option value="">-- Selecciona paciente --</option>
+              {patients.map((p:any)=><option key={p.id} value={p.id}>{p.firstName} {p.lastName} - {p.email}</option>)}
+            </select>
+            <p className="text-xs text-indigo-600 mt-1">El triaje creará una historia clínica borrador para este paciente.</p>
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -83,10 +137,11 @@ const TriageChat: React.FC = () => {
             ) : (
               <>
                 <Send className="w-5 h-5" />
-                <span>Analizar Síntomas</span>
+                <span>{isDoctor ? 'Analizar y preparar historia' : 'Analizar Síntomas'}</span>
               </>
             )}
           </button>
+          {createMsg && <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">{createMsg}</div>}
         </div>
 
         {error && (
@@ -125,10 +180,27 @@ const TriageChat: React.FC = () => {
 
               <div className="mt-6 bg-white rounded-lg p-4 border border-blue-200">
                 <p className="text-sm text-gray-600 mb-2">Próximos Pasos</p>
-                <p className="text-gray-700">
-                  Dirígete a la sección <strong>Reservar Turno</strong> para solicitar una cita con{' '}
-                  <strong>{result.recommendedSpecialty}</strong>.
-                </p>
+                {isDoctor ? (
+                  <div className="space-y-3">
+                    <p className="text-gray-700">Usa este triaje para crear la historia clínica del paciente seleccionado.</p>
+                    <button onClick={handleCreateFromTriage} disabled={creating || !selectedPatientId} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300">
+                      {creating ? <Loader className="w-4 h-4 animate-spin"/> : <FileText className="w-4 h-4"/>}
+                      {creating ? 'Creando...' : 'Crear Historia Clínica con este triaje'}
+                    </button>
+                    {!selectedPatientId && <p className="text-xs text-amber-600">Selecciona un paciente arriba.</p>}
+                    <Link to="/medical-records" className="block text-center text-sm text-indigo-600 hover:underline">Ir a Historia Clínica → generar protocolo IA</Link>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-gray-700">
+                      Te recomendamos <strong>{result.recommendedSpecialty}</strong> con urgencia <strong>{result.urgency}</strong>.
+                    </p>
+                    <Link to="/booking" className="w-full flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700">
+                      <CalendarCheck className="w-5 h-5"/> Reservar Turno con {result.recommendedSpecialty}
+                    </Link>
+                    <Link to="/medical-records" className="block text-center text-sm text-blue-600 hover:underline">Ver tu Historia Clínica</Link>
+                  </div>
+                )}
               </div>
             </div>
           </div>
