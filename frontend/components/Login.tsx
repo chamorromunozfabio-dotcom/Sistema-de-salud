@@ -17,7 +17,11 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login({ email, password });
+      const result: any = await login({ email, password });
+      if (result?.require2FA) {
+        navigate('/verify-2fa');
+        return;
+      }
       navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión');

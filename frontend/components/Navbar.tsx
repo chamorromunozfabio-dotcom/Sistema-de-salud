@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Calendar, Users, Home, LogOut, Menu, X } from 'lucide-react';
+import { Activity, Calendar, Users, Home, LogOut, Menu, X, FileText, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 
@@ -12,6 +12,8 @@ const Navbar: React.FC = () => {
     { path: '/', label: 'Inicio', icon: Home, roles: [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ADMIN] },
     { path: '/triage', label: 'Triaje IA', icon: Activity, roles: [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ADMIN] },
     { path: '/booking', label: 'Reservar Turno', icon: Calendar, roles: [UserRole.PATIENT] },
+    { path: '/medical-records', label: 'Historia Clínica', icon: FileText, roles: [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ADMIN] },
+    { path: '/users', label: 'Usuarios', icon: Shield, roles: [UserRole.ADMIN] },
     { path: '/admin', label: 'Administración', icon: Users, roles: [UserRole.ADMIN] },
   ];
 

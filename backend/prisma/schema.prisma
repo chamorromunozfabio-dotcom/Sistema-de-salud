@@ -20,9 +20,22 @@ model User {
   dni          String?       @unique
   role         UserRole      @default(PATIENT)
   isActive     Boolean       @default(true)
+  // 2FA
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret  String? // OTP hash temporal o TOTP secret
+  failedLoginAttempts Int @default(0)
+  lockUntil         DateTime?
+  lastLoginAt       DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
+  // Historia clínica relaciones
+  medicalRecordsAsPatient MedicalRecord[] @relation("PatientRecords")
+  medicalRecordsAsDoctor  MedicalRecord[] @relation("DoctorRecords")
+  doctorProfile Doctor? // si es DOCTOR, perfil vinculado
+  auditLogs     AuditLog[]
+  twoFactorCodes TwoFactorCode[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
 }
@@ -31,6 +44,18 @@ enum UserRole {
   PATIENT
   DOCTOR
   ADMIN
+}
+
+// Tabla de roles (catalogo) - requisito: tabla de roles en BD
+model Role {
+  id          String   @id @default(uuid())
+  name        UserRole @unique
+  description String?
+  permissions Json? // ej: ["users:read","records:write"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
 }
 
 model Specialty {
@@ -52,10 +77,14 @@ model Doctor {
   hospital       String
   email          String          @unique
   phone          String?
+  // Vinculación con User (cuenta de acceso) - solo admin crea
+  userId         String?         @unique
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   appointments   Appointment[]
   availableSlots AvailableSlot[]
+  medicalRecords MedicalRecord[]
 
   @@map("doctors")
 }
@@ -88,6 +117,7 @@ model Appointment {
   status            AppointmentStatus @default(PENDING)
   notes             String?
   cancellationToken String?           @unique
+  medicalRecord     MedicalRecord?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -114,4 +144,128 @@ model WaitingList {
   notified     Boolean  @default(false)
 
   @@map("waiting_list")
+}
+
+// Logs de auditoría - requisito tabla logs
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String // LOGIN, REGISTER, CREATE_RECORD, UPDATE_RECORD, CHANGE_ROLE, etc
+  entity    String? // User, MedicalRecord, Appointment...
+  entityId  String?
+  details   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Tokens refresh persistidos (además de Redis para trazabilidad / revocación)
+model RefreshToken {
+  id         String   @id @default(uuid())
+  tokenHash  String   @unique // hash del token (no guardar en claro)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceInfo String?
+  ip         String?
+  expiresAt  DateTime
+  revoked    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// 2FA OTP
+model TwoFactorCode {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String // bcrypt hash del código de 6 dígitos
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("two_factor_codes")
+}
+
+// Historia clínica - lógica real clínica
+model MedicalRecord {
+  id               String       @id @default(uuid())
+  patientId        String
+  patient          User         @relation("PatientRecords", fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId         String?
+  doctor           User?        @relation("DoctorRecords", fields: [doctorId], references: [id], onDelete: SetNull)
+  doctorProfileId  String?
+  doctorProfile    Doctor?      @relation(fields: [doctorProfileId], references: [id], onDelete: SetNull)
+  appointmentId    String?      @unique
+  appointment      Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  visitDate        DateTime     @default(now())
+  status           RecordStatus @default(DRAFT)
+  // Anamnesis
+  chiefComplaint            String // Motivo de consulta
+  historyOfPresentIllness   String? @db.Text // Historia enfermedad actual
+  pastMedicalHistory        String? @db.Text
+  allergies                 String? @db.Text
+  currentMedications        String? @db.Text
+  familyHistory             String? @db.Text
+  socialHistory             String? @db.Text
+  // Examen
+  vitalSigns                Json? // { ta:"120/80", fc:80, fr:16, temp:36.5, peso:70, talla:175, imc:22.8, spo2:98 }
+  physicalExam              String? @db.Text
+  // Diagnóstico y plan - con apoyo IA Gemini
+  diagnosis                 String   @db.Text // CIE-10 + descripción
+  diagnosisCode             String? // CIE10
+  cie10Code                 String?
+  treatmentPlan             String?  @db.Text
+  labOrders                 String?  @db.Text
+  prescriptions             Prescription[]
+  followUpInstructions      String?  @db.Text
+  // IA
+  aiProtocol                String?  @db.Text // protocolo a seguir generado por Gemini para paciente y doctor
+  aiDiagnosisSupport        String?  @db.Text // diagnóstico sugerido / diferencial
+  aiGeneratedAt             DateTime?
+  // Admin
+  notes                     String?  @db.Text
+  isConfidential            Boolean  @default(false)
+  signedAt                  DateTime?
+  signedById                String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([visitDate])
+  @@index([status])
+  @@map("medical_records")
+}
+
+enum RecordStatus {
+  DRAFT
+  FINAL
+  SIGNED
+  ARCHIVED
+}
+
+model Prescription {
+  id              String        @id @default(uuid())
+  medicalRecordId String
+  medicalRecord   MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  medication      String
+  dosage          String
+  frequency       String
+  duration        String
+  instructions    String?
+  createdAt       DateTime      @default(now())
+
+  @@map("prescriptions")
 }

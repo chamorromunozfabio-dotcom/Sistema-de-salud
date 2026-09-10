@@ -6,10 +6,13 @@ import { tokenService } from '../services/tokenService';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (data: LoginData) => Promise<void>;
+  login: (data: LoginData) => Promise<any>;
   register: (data: RegisterData) => Promise<void>;
+  verify2FA: (email: string, code: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  needs2FA: { email: string; tempToken?: string } | null;
+  setNeeds2FA: (v: any) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,18 +20,28 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needs2FA, setNeeds2FA] = useState<{ email: string; tempToken?: string } | null>(null);
 
   useEffect(() => {
-    // Token en memoria: al refrescar la página se pierde (seguridad máxima, sin localStorage/cookies).
-    // El usuario deberá volver a loguearse tras F5 - comportamiento esperado por requisito.
     const loadUser = async () => {
       try {
+        // Intentar refresh silencioso con cookie httpOnly antes de decidir que no hay sesión
+        if (!tokenService.isAuthenticated()) {
+          const refreshed = await tokenService.tryRefresh();
+          if (refreshed) {
+            const profile = await authService.getProfile();
+            setUser(profile);
+            setLoading(false);
+            return;
+          }
+        }
         if (tokenService.isAuthenticated()) {
           const profile = await authService.getProfile();
           setUser(profile);
         }
       } catch (error) {
         console.error('Error loading user:', error);
+        // No borrar token si fue refresh falló; solo limpiar
         tokenService.removeToken();
       } finally {
         setLoading(false);
@@ -36,7 +49,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     loadUser();
-    // Suscribirse a cambios de token (logout/login en otra pestaña logica opcional)
     const unsub = tokenService.subscribe((t) => {
       if (!t) setUser(null);
     });
@@ -44,8 +56,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (data: LoginData) => {
-    const response = await authService.login(data);
+    const result: any = await authService.login(data);
+    if (result.require2FA) {
+      setNeeds2FA({ email: data.email, tempToken: result.tempToken });
+      return result; // UI debe mostrar verify 2FA
+    }
+    setUser(result.user);
+    setNeeds2FA(null);
+    return result;
+  };
+
+  const verify2FA = async (email: string, code: string) => {
+    const response = await authService.verifyTwoFactor(email, code);
     setUser(response.user);
+    setNeeds2FA(null);
   };
 
   const register = async (data: RegisterData) => {
@@ -53,9 +77,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(response.user);
   };
 
-  const logout = () => {
-    authService.logout();
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
+    setNeeds2FA(null);
   };
 
   const value: AuthContextType = {
@@ -63,8 +88,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     loading,
     login,
     register,
+    verify2FA,
     logout,
     isAuthenticated: !!user,
+    needs2FA,
+    setNeeds2FA,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

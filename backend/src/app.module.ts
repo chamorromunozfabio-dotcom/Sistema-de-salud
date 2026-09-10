@@ -4,12 +4,17 @@ import { BullModule } from '@nestjs/bull';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
+import { AuditModule } from './common/audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { SpecialtiesModule } from './specialties/specialties.module';
 import { DoctorsModule } from './doctors/doctors.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TriageModule } from './triage/triage.module';
+import { MedicalRecordsModule } from './medical-records/medical-records.module';
+import { AuditLogModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -32,7 +37,7 @@ import { TriageModule } from './triage/triage.module';
       },
     ]),
 
-    // Bull Queue (Redis)
+    // Bull Queue (Redis) - configuracion de redis.js adaptada
     BullModule.forRoot({
       redis: {
         host: process.env.REDIS_HOST || 'localhost',
@@ -42,12 +47,17 @@ import { TriageModule } from './triage/triage.module';
 
     // Application Modules
     PrismaModule,
-    AuthModule,
+    RedisModule, // configuracion de redis - autenticacion en el servidor
+    AuditModule, // tabla de logs
+    AuthModule, // login con token + autenticador + gestor de roles + creacion controlador auth + creacion tokens
+    UsersModule, // CRUD pacientes, doctores (solo admin registra), admin maneja todo
     SpecialtiesModule,
     DoctorsModule,
     AppointmentsModule,
     NotificationsModule,
     TriageModule,
+    MedicalRecordsModule, // historia clinica + IA Gemini protocolo/diagnostico
+    AuditLogModule, // endpoint logs
   ],
   providers: [
     {

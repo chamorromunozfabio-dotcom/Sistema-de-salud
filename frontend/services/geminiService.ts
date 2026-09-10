@@ -55,7 +55,7 @@ export const analyzeSymptoms = async (symptoms: string): Promise<TriageResult> =
   }
 
   try {
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3.6-flash';
     const prompt = `Analiza los siguientes síntomas de un paciente y recomienda la especialidad médica más adecuada del sistema de salud público argentino/chileno.
     Síntomas: "${symptoms}"
     

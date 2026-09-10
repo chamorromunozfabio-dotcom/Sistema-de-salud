@@ -2,12 +2,41 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
-import hpp from 'hpp';
+import * as hpp from 'hpp';
 import { AppModule } from './app.module';
 import { SanitizePipe } from './common/pipes/sanitize.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // ── Middleware cookie parser liviano (sin dependencia cookie-parser) + autenticación en el servidor (ejemplo) ──
+  // Equivalente a: app.use(cookieParser()) del ejemplo 'autenticacion en el servidor.js'
+  // Soporta refreshToken httpOnly cookie y manejo de tokens con hash + tiempo de trabajo
+  app.use((req: any, _res, next) => {
+    const header = req.headers?.cookie;
+    if (header) {
+      req.cookies = Object.fromEntries(
+        header.split(';').map((c: string) => {
+          const [k, ...v] = c.trim().split('=');
+          try {
+            return [k, decodeURIComponent(v.join('='))];
+          } catch {
+            return [k, v.join('=')];
+          }
+        }),
+      );
+    } else {
+      req.cookies = {};
+    }
+    next();
+  });
+
+  // Intentar usar cookie-parser si está instalado (mejor compatibilidad)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cookieParser = require('cookie-parser');
+    app.use(cookieParser());
+  } catch {}
 
   // ── Seguridad HTTP headers (helmet) ──
   app.use(
@@ -19,7 +48,7 @@ async function bootstrap() {
   // Previene HTTP Parameter Pollution
   app.use(hpp());
 
-  // Enable CORS estricto - solo frontends permitidos
+  // Enable CORS estricto - solo frontends permitidos, con credentials para cookies
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3002',
@@ -31,9 +60,9 @@ async function bootstrap() {
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'), false);
     },
-    credentials: true,
+    credentials: true, // necesario para enviar/recibir cookies httpOnly (refreshToken)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
 
   // Sanitización global contra XSS / JS injection (antes de validación)
@@ -52,16 +81,20 @@ async function bootstrap() {
   // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('SaludPública Connect API')
-    .setDescription('Sistema de Gestión de Turnos para Centros de Salud Públicos')
+    .setDescription('Sistema de Gestión de Turnos para Centros de Salud Públicos - Autenticación JWT con refresh en cookies httpOnly, 2FA, Roles RBAC, Historia Clínica e IA Gemini')
     .setVersion('1.0')
-    .addTag('auth', 'Autenticación JWT y RBAC')
+    .addTag('auth', 'Autenticación JWT, refresh en cookies httpOnly, 2FA, cambio de roles')
+    .addTag('users', 'Gestión de Usuarios / Pacientes / Doctores (solo ADMIN crea doctores)')
     .addTag('specialties', 'Gestión de Especialidades')
     .addTag('doctors', 'Gestión de Médicos')
     .addTag('appointments', 'Gestión de Turnos')
     .addTag('appointments-public', 'Turnos Públicos (token por email)')
+    .addTag('medical-records', 'Historia Clínica - paciente ve, doctor genera, admin administra + IA Gemini protocolo/diagnóstico')
     .addTag('triage', 'Triaje Inteligente con IA (Gemini)')
     .addTag('notifications', 'Sistema de Notificaciones')
+    .addTag('audit', 'Logs de auditoría')
     .addBearerAuth()
+    .addCookieAuth('refreshToken')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
@@ -84,7 +117,9 @@ async function bootstrap() {
 
   console.log(`🚀 Backend running on: http://localhost:${port}`);
   console.log(`📚 Swagger docs available at: http://localhost:${port}/api`);
-  console.log(`🔒 Seguridad: helmet, hpp, throttler (60/min global, 5-10/min auth), SanitizePipe XSS, CORS estricto`);
+  console.log(`🔒 Seguridad: helmet, hpp, throttler, SanitizePipe XSS, CORS con credentials (cookies), JWT access 15m + refresh 7d httpOnly, hash bcrypt 10, 2FA OTP`);
+  console.log(`🍪 Cookies: refreshToken httpOnly secure sameSite=strict maxAge 7d - manejo de tokens con hash y tiempo de trabajo`);
+  console.log(`📦 Redis: ioredis client con fallback memoria - configuración de redis.js + Bull queue`);
 }
 
 bootstrap();

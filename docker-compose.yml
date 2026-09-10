@@ -43,6 +43,56 @@ services:
     depends_on:
       - redis
 
+  # Backend NestJS
+  backend:
+    build: ./backend
+    container_name: saludpublica-backend
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+      FRONTEND_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/saludpublica?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: sanare-super-secret-jwt-key-for-development-purposes-only-32chars
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_USER: ""
+      EMAIL_PASS: ""
+      EMAIL_FROM: "SaludPública Connect <noreply@saludpublica.com>"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-tu_api_key_de_google_ai}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - saludpublica-network
+    env_file:
+      - ./backend/.env
+
+  # Frontend React + Vite
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3001
+        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-tu_api_key_aqui}
+    container_name: saludpublica-frontend
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      VITE_API_URL: http://localhost:3001
+      VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-tu_api_key_aqui}
+    depends_on:
+      - backend
+    networks:
+      - saludpublica-network
+
 volumes:
   postgres_data:
   redis_data:

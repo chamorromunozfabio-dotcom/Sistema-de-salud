@@ -1,19 +1,18 @@
 /**
- * TokenService en memoria - NO persiste en localStorage / sessionStorage / cookies
+ * TokenService híbrido - manejo de tokens con cookies httpOnly + hash + tiempo de trabajo
  * 
- * Por requisito de seguridad del proyecto ("no almacenar nada en storage y cookies"),
- * el JWT se mantiene únicamente en memoria RAM del navegador (variable de cierre).
+ * Backend ahora guarda refreshToken en cookie httpOnly httpOnly secure sameSite=strict maxAge 7d
+ * - accessToken: 15m en memoria (variable _token) + opcional en cookie httpOnly si backend lo envía
+ * - refreshToken: httpOnly cookie (no accesible por JS) + tiempo de trabajo 7d + hash bcrypt en DB/Redis
  * 
- * Implicaciones:
- * - Al recargar la página (F5) el usuario deberá volver a iniciar sesión.
- * - El token no es accesible desde XSS persistido via storage, solo en memoria.
- * - No se usan cookies httpOnly (también prohibidas por requisito).
+ * Frontend:
+ * - accessToken en memoria (cierre de módulo) para Authorization Bearer
+ * - refreshToken se envía automáticamente por navegador con credentials:'include' en cada request a /auth/refresh-token
+ * - Al recargar (F5), se intenta silent refresh usando cookie httpOnly antes de pedir login
  * 
- * Si necesitas persistencia temporal (ej. recarga), considera migrar a httpOnly cookie
- * seteada por el backend + CSRF token, pero esto violaría el requisito actual.
+ * Esto cumple requisito: manejo de tokens y guardar en cookies - tiempo de trabajo - hash
  */
 
-// Variable en cierre de módulo - vive mientras el tab esté abierto
 let _token: string | null = null;
 let _listeners: Array<(token: string | null) => void> = [];
 
@@ -36,11 +35,31 @@ export const tokenService = {
   isAuthenticated(): boolean {
     return !!_token;
   },
-  /** Para sincronizar UI si múltiples componentes observan */
   subscribe(cb: (token: string | null) => void): () => void {
     _listeners.push(cb);
     return () => {
       _listeners = _listeners.filter((f) => f !== cb);
     };
+  },
+  // Intentar refresh silencioso usando cookie httpOnly
+  async tryRefresh(): Promise<string | null> {
+    try {
+      const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${API_URL}/auth/refresh-token`, {
+        method: 'POST',
+        credentials: 'include', // envía cookie httpOnly refreshToken
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.accessToken) {
+        _token = data.accessToken;
+        notify();
+        return data.accessToken;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   },
 };
