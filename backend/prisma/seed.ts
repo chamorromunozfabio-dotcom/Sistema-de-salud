@@ -171,6 +171,17 @@ async function main() {
         specialtyId: specialties[3].id,
       },
     }),
+    prisma.doctor.upsert({
+      where: { email: 'trauma.doctor@hospital.com' },
+      update: {},
+      create: {
+        name: 'Dr. Luis Trauma',
+        email: 'trauma.doctor@hospital.com',
+        phone: '+54 11 9999-0000',
+        hospital: 'Hospital Central',
+        specialtyId: specialties[4].id,
+      },
+    }),
   ]);
 
   console.log(`✅ Created ${doctors.length} doctors`);
@@ -181,19 +192,20 @@ async function main() {
     data: { userId: doctorUser.id },
   });
 
-  // Crear slots disponibles (próximos 14 días incluyendo hoy si aún hay horas futuras) – slots de 20 min
+  // Crear slots disponibles para TODOS los doctores (incluye creados manualmente como Karen) – 14 días
   const now = new Date();
+  const allDoctorsForSlots = await prisma.doctor.findMany();
   const slots: { doctorId: string; startTime: Date; endTime: Date; isBooked: boolean }[] = [];
   const SLOT_DURATION_MS = 20 * 60 * 1000;
 
-  for (const doctor of doctors) {
+  for (const doctor of allDoctorsForSlots) {
     for (let day = 0; day < 14; day++) {
       const date = new Date(now);
       date.setDate(date.getDate() + day);
       for (const hour of [9, 10, 11, 14, 15, 16]) {
         const startTime = new Date(date);
         startTime.setHours(hour, 0, 0, 0);
-        if (startTime <= now) continue; // no crear slots en el pasado / ya pasados hoy
+        if (startTime <= now) continue;
         const endTime = new Date(startTime.getTime() + SLOT_DURATION_MS);
         slots.push({ doctorId: doctor.id, startTime, endTime, isBooked: false });
       }
@@ -202,7 +214,7 @@ async function main() {
 
   await prisma.availableSlot.deleteMany({});
   await prisma.availableSlot.createMany({ data: slots, skipDuplicates: true });
-  console.log(`✅ Created ${slots.length} available slots (14 días)`);
+  console.log(`✅ Created ${slots.length} available slots (14 días) para ${allDoctorsForSlots.length} doctores`);
 
   // Seed historia clínica demo: paciente1 tiene una historia creada por doctor1, y una segunda demo con IA
   const paciente1 = users.find((u) => u.email === 'paciente1@email.com')!;
