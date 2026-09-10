@@ -69,10 +69,28 @@ export class DoctorsService {
       throw new BadRequestException('El email ya está en uso');
     }
 
-    return this.prisma.doctor.create({
+    const doctor = await this.prisma.doctor.create({
       data: createDto,
       include: { specialty: true },
     });
+    // Auto-generar slots para evitar "no hay turnos disponibles" en pacientes
+    const nowSlots = new Date();
+    const slotData: any[] = [];
+    for (let day = 0; day < 14; day++) {
+      const date = new Date(nowSlots);
+      date.setDate(date.getDate() + day);
+      for (const hour of [9, 10, 11, 14, 15, 16]) {
+        const startTime = new Date(date);
+        startTime.setHours(hour, 0, 0, 0);
+        if (startTime <= nowSlots) continue;
+        const endTime = new Date(startTime.getTime() + 20 * 60 * 1000);
+        slotData.push({ doctorId: doctor.id, startTime, endTime, isBooked: false });
+      }
+    }
+    if (slotData.length) {
+      await this.prisma.availableSlot.createMany({ data: slotData, skipDuplicates: true });
+    }
+    return doctor;
   }
 
   async update(id: string, updateDto: UpdateDoctorDto) {

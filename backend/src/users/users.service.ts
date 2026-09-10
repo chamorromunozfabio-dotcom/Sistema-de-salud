@@ -127,18 +127,36 @@ export class UsersService {
       return { user, doctorProfile };
     });
 
+    // Auto-generar turnos disponibles para el nuevo doctor (14 días, evita "no hay turnos")
+    const nowSlots = new Date();
+    const slotData: any[] = [];
+    for (let day = 0; day < 14; day++) {
+      const date = new Date(nowSlots);
+      date.setDate(date.getDate() + day);
+      for (const hour of [9, 10, 11, 14, 15, 16]) {
+        const startTime = new Date(date);
+        startTime.setHours(hour, 0, 0, 0);
+        if (startTime <= nowSlots) continue;
+        const endTime = new Date(startTime.getTime() + 20 * 60 * 1000);
+        slotData.push({ doctorId: result.doctorProfile.id, startTime, endTime, isBooked: false });
+      }
+    }
+    if (slotData.length) {
+      await this.prisma.availableSlot.createMany({ data: slotData, skipDuplicates: true });
+    }
+
     await this.audit.log({
       userId: adminId,
       action: 'CREATE_DOCTOR',
       entity: 'User',
       entityId: result.user.id,
-      details: { email: dto.email, hospital: dto.hospital, specialtyId: dto.specialtyId },
+      details: { email: dto.email, hospital: dto.hospital, specialtyId: dto.specialtyId, slotsGenerated: slotData.length },
       ip,
     });
 
     const { password, ...safeUser } = result.user as any;
     return {
-      message: 'Doctor creado exitosamente. Credenciales otorgadas por admin.',
+      message: `Doctor creado exitosamente. Credenciales otorgadas por admin. Se generaron ${slotData.length} turnos disponibles.`,
       credentials: { email: dto.email, password: dto.password }, // admin debe comunicar al doctor
       user: safeUser,
       doctorProfile: result.doctorProfile,

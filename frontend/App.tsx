@@ -11,6 +11,7 @@ import Register from './components/Register';
 import Verify2FA from './components/Verify2FA';
 import MedicalRecords from './components/MedicalRecords';
 import UsersManagement from './components/UsersManagement';
+import DoctorCalendar from './components/DoctorCalendar';
 import { Stethoscope, CalendarCheck, ArrowRight, FileText, Users, ShieldCheck } from 'lucide-react';
 import { UserRole } from './types/auth';
 
@@ -181,6 +182,17 @@ const App: React.FC = () => {
             <PrivateRoute allowedRoles={[UserRole.ADMIN]}>
               <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 py-6">
                 <UsersManagement />
+              </main>
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/doctor-calendar"
+          element={
+            <PrivateRoute allowedRoles={[UserRole.DOCTOR, UserRole.ADMIN]}>
+              <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 py-6">
+                <DoctorCalendar />
               </main>
             </PrivateRoute>
           }

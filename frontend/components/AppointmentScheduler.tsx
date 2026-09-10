@@ -440,8 +440,9 @@ const AppointmentScheduler: React.FC = () => {
               ) : availableSlots.length === 0 ? (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
                   <p className="text-yellow-700">
-                    No hay horarios disponibles para esta fecha. Por favor, seleccione otra fecha.
+                    No hay turnos libres para <strong>{formatDate(selectedDate)}</strong>. Los médicos atienden <strong>lun a dom 9-11 y 14-16</strong> los próximos 14 días. Prueba con el día siguiente o elige otro médico. Si el problema persiste, pide al admin que genere horarios para este doctor.
                   </p>
+                  <p className="text-xs text-yellow-600 mt-2">Tip: hoy {new Date().toLocaleDateString('es-AR')} puede no tener turnos si ya pasaron las 16hs; selecciona mañana.</p>
                 </div>
               ) : (
                 <div className="space-y-4">

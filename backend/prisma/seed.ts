@@ -181,24 +181,19 @@ async function main() {
     data: { userId: doctorUser.id },
   });
 
-  // Crear slots disponibles (próximos 7 días) – slots de 20 minutos exactos
+  // Crear slots disponibles (próximos 14 días incluyendo hoy si aún hay horas futuras) – slots de 20 min
   const now = new Date();
   const slots: { doctorId: string; startTime: Date; endTime: Date; isBooked: boolean }[] = [];
   const SLOT_DURATION_MS = 20 * 60 * 1000;
 
   for (const doctor of doctors) {
-    for (let day = 1; day <= 7; day++) {
+    for (let day = 0; day < 14; day++) {
       const date = new Date(now);
       date.setDate(date.getDate() + day);
-      for (const hour of [9, 10, 11]) {
+      for (const hour of [9, 10, 11, 14, 15, 16]) {
         const startTime = new Date(date);
         startTime.setHours(hour, 0, 0, 0);
-        const endTime = new Date(startTime.getTime() + SLOT_DURATION_MS);
-        slots.push({ doctorId: doctor.id, startTime, endTime, isBooked: false });
-      }
-      for (const hour of [14, 15, 16]) {
-        const startTime = new Date(date);
-        startTime.setHours(hour, 0, 0, 0);
+        if (startTime <= now) continue; // no crear slots en el pasado / ya pasados hoy
         const endTime = new Date(startTime.getTime() + SLOT_DURATION_MS);
         slots.push({ doctorId: doctor.id, startTime, endTime, isBooked: false });
       }
@@ -207,7 +202,7 @@ async function main() {
 
   await prisma.availableSlot.deleteMany({});
   await prisma.availableSlot.createMany({ data: slots, skipDuplicates: true });
-  console.log(`✅ Created ${slots.length} available slots`);
+  console.log(`✅ Created ${slots.length} available slots (14 días)`);
 
   // Seed historia clínica demo: paciente1 tiene una historia creada por doctor1, y una segunda demo con IA
   const paciente1 = users.find((u) => u.email === 'paciente1@email.com')!;
